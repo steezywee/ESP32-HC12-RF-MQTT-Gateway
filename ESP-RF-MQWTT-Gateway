@@ -1,0 +1,78 @@
+#include <WiFi.h>
+#include <PubSubClient.h>
+#include <SoftwareSerial.h>
+
+// Replace with your network credentials
+const char* ssid = "ssid";
+const char* password = "password";
+
+// MQTT Broker
+const char* mqtt_broker = "ip address";
+const char* mqtt_username = "user";
+const char* mqtt_password = "pass";
+const int mqtt_port = 1883;
+
+// HC12 pins
+#define HC12_TX_PIN 23  // Connect to HC12 TX
+#define HC12_RX_PIN 22  // Connect to HC12 RX
+
+// Create a SoftwareSerial object for the HC12
+SoftwareSerial hc12(HC12_TX_PIN, HC12_RX_PIN); 
+
+WiFiClient espClient;
+PubSubClient client(espClient);
+
+void setup() {
+  Serial.begin(9600);
+  hc12.begin(9600); // HC-12 baud rate
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(1000);
+    Serial.println("Connecting to WiFi...");
+  }
+  Serial.println("Connected to WiFi");
+
+  client.setServer(mqtt_broker, mqtt_port);
+  connectToMQTT();
+}
+
+void loop() {
+  if (!client.connected()) {
+    connectToMQTT();
+  }
+
+  if (hc12.available()) {
+    static String incomingData = "";
+    char incomingChar = (char)hc12.read();
+
+    if (incomingChar == '\n') {
+      Serial.println(incomingData);
+
+      int delimiterIndex = incomingData.indexOf(':');
+      if (delimiterIndex != -1 && delimiterIndex < incomingData.length() - 1) {
+        String topic = incomingData.substring(0, delimiterIndex);
+        String payload = incomingData.substring(delimiterIndex + 1);
+        client.publish(topic.c_str(), payload.c_str());
+      }
+
+      incomingData = "";
+    } else {
+      incomingData += incomingChar;
+    }
+  }
+
+  client.loop();
+}
+
+void connectToMQTT() {
+  while (!client.connected()) {
+    Serial.println("Connecting to MQTT...");
+    if (client.connect("ESP32Client", mqtt_username, mqtt_password)) {
+      Serial.println("Connected to MQTT");
+    } else {
+      Serial.print("failed with state ");
+      Serial.print(client.state());
+      delay(2000);
+    }
+  }
+}
